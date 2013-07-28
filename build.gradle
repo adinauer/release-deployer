@@ -1,0 +1,110 @@
+task checkSetup(type: CheckSetup)
+task startVirtualMachine(type: StartVirtualMachine)
+task downloadRelease(type: DownloadRelease)
+//task deployRelease(type: DeployRelease)
+//task configureApplicationServer(type: ConfigureApplicationServer)
+
+class CheckSetup extends DefaultTask {
+	@Input
+	String checked = 'checked'
+	
+	@OutputFile
+	File outputFile = new File("$project.buildDir/setupCheck.txt")
+	
+	@TaskAction
+	void check() {
+		def vagrant = new Vagrant()
+			
+		if (!vagrant.isInstalled()) {
+			throw new GradleException('Vagrant is not installed, please install it and retry!')
+		}
+	}
+}
+
+class StartVirtualMachine extends DefaultTask {
+	def vagrant = new Vagrant()
+		
+	@TaskAction
+	void startVirtualMachine() {
+//		println 'status: ' + vagrant.status()
+		
+		if (!vagrant.isRunning()) {
+			println 'starting vm ...'
+			vagrant.start()
+		} 
+	}
+}
+
+class DownloadRelease extends DefaultTask {
+	@TaskAction
+	void downloadRelease() {
+		// check if release is already in releases folder
+			// MD5 hash file in releases folder
+			// download MD5 hash from nexus
+			// compare hashes
+			// decide whether release needs to be downloaded
+		
+		// download release
+	}
+}
+
+class Vagrant {
+	enum Status {
+		NOT_CREATED,
+		RUNNING,
+		ABORTED,
+		POWEROFF,
+		SAVED
+	}
+	
+	StringBuilder output = new StringBuilder()
+	
+	def isInstalled() {
+		execute('-v')
+		return output.toString().startsWith("Vagrant version")
+	}
+	
+	def isRunning() {
+		return status() == Status.RUNNING
+	}
+	
+	def status() {
+		execute('status')
+		
+		def status
+		
+		output.toString().find(/default.*/) { statusLine ->
+			status = parseStatus(statusLine)
+		}
+		
+		return status
+	}
+	
+	def start() {
+		execute('up')
+	}
+	
+	def parseStatus(statusLine) {
+		if (statusLine ==~ /.*running.*/) {
+			return Status.RUNNING
+		} else if (statusLine ==~ /.*not created.*/) {
+			return Status.NOT_CREATED
+		} else if (statusLine ==~ /.*aborted.*/) {
+			return Status.ABORTED
+		} else if (statusLine ==~ /.*poweroff.*/) {
+			return Status.POWEROFF
+		} else if (statusLine ==~ /.*saved.*/) {
+			return Status.SAVED
+		} else {
+			throw new GradleException('Unknown vagrant status: ' + statusLine)
+		}
+	}
+	
+	def execute(command) {
+		def vagrantCommand = 'vagrant ' + command;
+		def p = vagrantCommand.execute()
+				
+		p.consumeProcessOutput(output, System.err)
+		p.waitFor()
+	}
+}
