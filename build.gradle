@@ -1,50 +1,113 @@
-task checkSetup(type: CheckSetup)
-task startVirtualMachine(type: StartVirtualMachine)
-task downloadRelease(type: DownloadRelease)
-//task deployRelease(type: DeployRelease)
-//task configureApplicationServer(type: ConfigureApplicationServer)
+forceUpdate = (forceUpdate ?: true).toBoolean()
 
-class CheckSetup extends DefaultTask {
-	@Input
-	String checked = 'checked'
-	
-	@OutputFile
-	File outputFile = new File("$project.buildDir/setupCheck.txt")
-	
-	@TaskAction
-	void check() {
-		def vagrant = new Vagrant()
-			
-		if (!vagrant.isInstalled()) {
-			throw new GradleException('Vagrant is not installed, please install it and retry!')
-		}
+def topsecretTaskGroup = 'topsecret'
+
+task startVirtualMachine(type: StartVirtualMachine, group: topsecretTaskGroup) {
+	onlyIf {
+		!new Vagrant().isRunning()
 	}
 }
+
+task downloadRelease(type: DownloadRelease, group: topsecretTaskGroup, dependsOn: startVirtualMachine) {
+	username = project.username
+	password = project.password
+	releaseVersion = project.releaseVersion
+	mode = downloadMode
+	sourceFile = file(downloadFile)
+
+	outputs.upToDateWhen {
+		// forceUpdate means the file should be freshly downloaded
+		// SNAPSHOT release files will always be freshly downloaded
+		// if the file doesn't exist yet, it needs to be downloaded
+		!forceUpdate && !(releaseVersion ==~ /(?i).*SNAPSHOT.*/) && destinationFile.exists()
+	}
+}
+
+task deployRelease(type: DeployRelease, group: topsecretTaskGroup, dependsOn: downloadRelease) {
+	releaseFile = downloadRelease.destinationFile
+}
+
+//task configureApplicationServer(type: ConfigureApplicationServer)
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '1.6'
+}
+
+
+
 
 class StartVirtualMachine extends DefaultTask {
 	def vagrant = new Vagrant()
 		
 	@TaskAction
 	void startVirtualMachine() {
-//		println 'status: ' + vagrant.status()
-		
-		if (!vagrant.isRunning()) {
-			println 'starting vm ...'
-			vagrant.start()
-		} 
+		println 'starting vm ...'
+		vagrant.start()
 	}
 }
 
 class DownloadRelease extends DefaultTask {
+	enum Mode {
+		NEXUS,
+		LOCAL_REPO,
+		FILE
+	}
+
+	String username
+	String password
+	String releaseVersion
+	Mode mode = Mode.LOCAL_REPO
+	File sourceFile
+
+	File getDestinationFile() {
+		return project.file("releases/release-${releaseVersion}.ear")
+	}
+
 	@TaskAction
 	void downloadRelease() {
-		// check if release is already in releases folder
-			// MD5 hash file in releases folder
-			// download MD5 hash from nexus
-			// compare hashes
-			// decide whether release needs to be downloaded
+		if (mode == Mode.NEXUS) downloadFromNexus()
+		if (mode == Mode.FILE) downloadFromFile()
+		if (mode == Mode.LOCAL_REPO) downloadFromLocalRepository()
+	}
+
+	private void downloadFromNexus() {
+		println 'downloading release from nexus'
+
+		ant.get(
+			dest: destinationFile.absolutePath, 
+			src: 'http://dinauer.at/etc/files/puppetlabs-stdlib-3.2.0.tar.gz', 
+			username: username,
+			password: password
+		)
+	}
+
+	private void downloadFromLocalRepository() {
+		println 'downloading release from local repository ...'
+		def source = "/home/alex/.m2/repository/at/dinauer/fhbay-ear/${releaseVersion}/fhbay-ear-${releaseVersion}.ear"
+
+		ant.copy(
+			file: source,
+			tofile: destinationFile.absolutePath
+		)
+	}
+
+	private void downloadFromFile() {
+		println 'downloading release from file ...'
 		
-		// download release
+		ant.copy(
+			file: sourceFile,
+			tofile: destinationFile.absolutePath
+		)
+	}
+}
+
+class DeployRelease extends DefaultTask {
+	File releaseFile
+
+	@TaskAction
+	void deployRelease() {
+		println 'deploying release ...'
+		println 'release file: ' + releaseFile.absolutePath
 	}
 }
 
