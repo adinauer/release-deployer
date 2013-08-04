@@ -13,7 +13,9 @@ task downloadRelease(type: DownloadRelease, group: topsecretTaskGroup, dependsOn
 	password = project.password
 	releaseVersion = project.releaseVersion
 	mode = downloadMode
-	sourceFile = file(downloadFile)
+	if (downloadFile != '') {
+		sourceFile = file(downloadFile)	
+	}
 
 	outputs.upToDateWhen {
 		// forceUpdate means the file should be freshly downloaded
